@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -64,6 +66,11 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid file type", nil)
+		return
+	}
+
 	exts, err := mime.ExtensionsByType(mediaType)
 	if err != nil || len(exts) == 0 {
 		respondWithError(w, http.StatusBadRequest, "Unsupported file type format", err)
@@ -72,10 +79,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	extension := exts[0]
 
-	fileName := fmt.Sprintf("%v%s", videoID, extension)
-	filePath := filepath.Join(cfg.assetsRoot, fileName)
+	key := make([]byte, 32)
+	_, err = rand.Read(key)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to fill with bytes", err)
+		return
+	}
+	randomFileName := base64.RawURLEncoding.EncodeToString(key)
+	fileName := fmt.Sprintf("%s%s", randomFileName, extension)
+	randomFilePath := filepath.Join(cfg.assetsRoot, fileName)
 
-	newFile, err := os.Create(filePath)
+	newFile, err := os.Create(randomFilePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Unable to create file", err)
 		return
@@ -88,7 +102,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	url := fmt.Sprintf("http://localhost:%s/assets/%v%s", cfg.port, videoID, extension)
+	url := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, fileName)
 	video.ThumbnailURL = &url
 
 	err = cfg.db.UpdateVideo(video)
